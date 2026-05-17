@@ -1,0 +1,527 @@
+\documentclass[aspectratio=169,11pt]{beamer}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[ngerman]{babel}
+\usepackage{lmodern}
+\usepackage{tikz}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{csquotes}
+
+\usetikzlibrary{arrows.meta,calc,fit,positioning,shapes.geometric}
+
+\definecolor{MeidanBlue}{HTML}{2563EB}
+\definecolor{MeidanGreen}{HTML}{16A34A}
+\definecolor{MeidanRed}{HTML}{DC2626}
+\definecolor{MeidanOrange}{HTML}{F97316}
+\definecolor{MeidanInk}{HTML}{111827}
+\definecolor{MeidanMuted}{HTML}{6B7280}
+\definecolor{MeidanPanel}{HTML}{F6F8FB}
+\definecolor{Textile}{HTML}{E8DCCB}
+
+\usetheme{Madrid}
+\usecolortheme{default}
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{footline}[frame number]
+\setbeamercolor{title}{fg=white,bg=MeidanBlue}
+\setbeamercolor{frametitle}{fg=MeidanInk,bg=white}
+\setbeamercolor{structure}{fg=MeidanBlue}
+\setbeamercolor{normal text}{fg=MeidanInk,bg=white}
+\setbeamercolor{block title}{fg=white,bg=MeidanBlue}
+\setbeamercolor{block body}{fg=MeidanInk,bg=MeidanPanel}
+
+\lstdefinestyle{meidan}{
+  basicstyle=\ttfamily\scriptsize,
+  keywordstyle=\color{MeidanBlue}\bfseries,
+  stringstyle=\color{MeidanGreen},
+  commentstyle=\color{MeidanMuted},
+  numbers=none,
+  frame=single,
+  rulecolor=\color{MeidanPanel},
+  breaklines=true,
+  showstringspaces=false,
+  columns=fullflexible
+}
+\lstset{style=meidan}
+
+\lstdefinelanguage{json}{
+  morestring=[b]",
+  stringstyle=\color{MeidanGreen},
+  literate=
+   *{0}{{{\color{MeidanBlue}0}}}{1}
+    {1}{{{\color{MeidanBlue}1}}}{1}
+    {2}{{{\color{MeidanBlue}2}}}{1}
+    {3}{{{\color{MeidanBlue}3}}}{1}
+    {4}{{{\color{MeidanBlue}4}}}{1}
+    {5}{{{\color{MeidanBlue}5}}}{1}
+    {6}{{{\color{MeidanBlue}6}}}{1}
+    {7}{{{\color{MeidanBlue}7}}}{1}
+    {8}{{{\color{MeidanBlue}8}}}{1}
+    {9}{{{\color{MeidanBlue}9}}}{1}
+    {:}{{{\color{MeidanInk}:}}}{1}
+    {,}{{{\color{MeidanInk},}}}{1}
+    {\{}{{{\color{MeidanInk}\{}}}{1}
+    {\}}{{{\color{MeidanInk}\}}}}{1}
+    {[}{{{\color{MeidanInk}[}}}{1}
+    {]}{{{\color{MeidanInk}]}}}{1},
+}
+
+\tikzset{
+  component/.style={
+    rounded corners=3pt,
+    draw=MeidanInk!45,
+    fill=white,
+    line width=0.7pt,
+    align=center,
+    minimum width=3.1cm,
+    minimum height=1.25cm,
+    inner sep=6pt
+  },
+  smallcomponent/.style={
+    rounded corners=3pt,
+    draw=MeidanInk!45,
+    fill=white,
+    line width=0.7pt,
+    align=center,
+    minimum width=2.35cm,
+    minimum height=0.95cm,
+    inner sep=4pt
+  },
+  flow/.style={-Latex, line width=1pt, draw=MeidanBlue},
+  altflow/.style={-Latex, line width=1pt, draw=MeidanOrange},
+  textilebox/.style={
+    rounded corners=4pt,
+    draw=Textile!70!black,
+    fill=Textile!35,
+    line width=0.7pt,
+    align=center,
+    inner sep=8pt
+  }
+}
+
+\newcommand{\apiendpoint}[1]{\texttt{#1}}
+
+\title[Meidan]{Meidan: Interaktiver Teddybär als Baby-Wein-Alarm}
+\subtitle{Prototyp für Interaktive Textilien}
+\author{Projektvorstellung}
+\institute{ESP32 \quad Go-Server \quad Gemini \quad Flutter-App}
+\date{\today}
+
+\begin{document}
+
+\begin{frame}
+  \titlepage
+\end{frame}
+
+\begin{frame}{Ausgangsidee}
+  \small
+  \begin{columns}[T,totalwidth=\textwidth]
+    \begin{column}{0.55\textwidth}
+      \begin{block}{Ziel}
+        Ein Kuschelbär wird zu einem unauffälligen, interaktiven Textil:
+        Er erkennt laute Geräusche oder mögliches Babyweinen und informiert
+        die Eltern über eine App.
+      \end{block}
+
+      \vspace{0.2em}
+      \begin{itemize}
+        \item Elektronik verschwindet im Bär, das Objekt bleibt vertraut.
+        \item Sensorwerte werden regelmäßig an einen Server gesendet.
+        \item Der Server bewertet Messwerte lokal oder optional mit Gemini.
+        \item Die Flutter-App zeigt Status, Pegel und Warnungen.
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.40\textwidth}
+      \centering
+      \begin{tikzpicture}[scale=0.85]
+        \fill[Textile!65] (0,0) circle (1.25);
+        \fill[Textile!75] (-0.85,1.05) circle (0.45);
+        \fill[Textile!75] (0.85,1.05) circle (0.45);
+        \fill[Textile!45] (-0.85,1.05) circle (0.25);
+        \fill[Textile!45] (0.85,1.05) circle (0.25);
+        \fill[white] (-0.45,0.25) circle (0.14);
+        \fill[white] (0.45,0.25) circle (0.14);
+        \fill[MeidanInk] (-0.45,0.25) circle (0.07);
+        \fill[MeidanInk] (0.45,0.25) circle (0.07);
+        \fill[MeidanInk] (0,-0.05) ellipse (0.16 and 0.1);
+        \draw[MeidanInk, line width=0.7pt] (-0.25,-0.35) .. controls (-0.05,-0.55) and (0.05,-0.55) .. (0.25,-0.35);
+        \node[smallcomponent, fill=white] at (0,-1.95) {ESP32\\Mikrofon};
+        \draw[flow] (0,-1.35) -- (0,-1.45);
+        \node[align=center, text=MeidanMuted] at (0,-2.85) {\small Technik im Textil\\\small statt sichtbar am Gerät};
+      \end{tikzpicture}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Warum Interaktive Textilien?}
+  \begin{columns}[T,totalwidth=\textwidth]
+    \begin{column}{0.47\textwidth}
+      \begin{block}{Textiles Objekt}
+        \begin{itemize}
+          \item weich, vertraut und kindgerecht
+          \item Sensorik kann verdeckt integriert werden
+          \item keine technische Hürde für die Nutzung
+        \end{itemize}
+      \end{block}
+    \end{column}
+    \begin{column}{0.47\textwidth}
+      \begin{block}{Interaktion}
+        \begin{itemize}
+          \item Umgebung wird über Geräusche wahrgenommen
+          \item Server erzeugt aus Messwerten ein Ereignis
+          \item App übersetzt Ereignisse in verständliche Warnungen
+        \end{itemize}
+      \end{block}
+    \end{column}
+  \end{columns}
+
+  \vspace{0.8em}
+  \begin{center}
+    \begin{tikzpicture}
+      \node[textilebox, minimum width=3.2cm] (textile) {Bär / Textil};
+      \node[component, right=1.2cm of textile] (sense) {Wahrnehmen\\\small Mikrofon + ESP32};
+      \node[component, right=1.2cm of sense] (react) {Reagieren\\\small App-Warnung};
+      \draw[flow] (textile) -- (sense);
+      \draw[flow] (sense) -- (react);
+    \end{tikzpicture}
+  \end{center}
+\end{frame}
+
+\begin{frame}{Systemüberblick}
+  \centering
+  \begin{tikzpicture}[node distance=1.25cm]
+    \node[textilebox, minimum width=3.2cm, minimum height=2.05cm] (bear) {
+      \textbf{Teddybär}\\
+      \small ESP32 + Mikrofon\\
+      \small Pegel + 2s WAV
+    };
+    \node[component, right=1.3cm of bear] (server) {
+      \textbf{Go-Server}\\
+      \small REST-API\\
+      \small Events + Pegel
+    };
+    \node[component, above right=0.4cm and 1.3cm of server] (gemini) {
+      \textbf{Gemini}\\
+      \small optionale\\Audioanalyse
+    };
+    \node[component, below right=0.4cm and 1.3cm of server] (app) {
+      \textbf{Flutter-App}\\
+      \small Dashboard\\
+      \small Warnsignal
+    };
+
+    \draw[flow] (bear) -- node[above, font=\scriptsize]{HTTP JSON} (server);
+    \draw[altflow] (server) -- node[above, sloped, font=\scriptsize]{Audio} (gemini);
+    \draw[altflow] (gemini) -- node[below, sloped, font=\scriptsize]{Urteil} (server);
+    \draw[flow] (app) -- node[below, sloped, font=\scriptsize]{Polling} (server);
+    \draw[flow] (server) -- node[above, sloped, font=\scriptsize]{Status} (app);
+  \end{tikzpicture}
+
+  \vspace{0.8em}
+  \small
+  Der Server ist die zentrale Stelle: Er sammelt Messwerte, bewertet Ereignisse
+  und stellt den aktuellen Zustand für die App bereit.
+\end{frame}
+
+\begin{frame}{Hardware im Bär}
+  \begin{columns}[T,totalwidth=\textwidth]
+    \begin{column}{0.48\textwidth}
+      \begin{block}{Bauteile}
+        \begin{itemize}
+          \item ESP32 als Mikrocontroller mit WLAN
+          \item analoges Mikrofonmodul, z. B. KY-037/KY-038
+          \item Stromversorgung für den mobilen Prototyp
+          \item weiche Platzierung im Inneren des Bären
+        \end{itemize}
+      \end{block}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \begin{block}{Wichtige Parameter}
+        \begin{tabular}{ll}
+          \toprule
+          Messfenster & 120 ms\\
+          Pegel & max - min\\
+          Audio & 2 s, 8 kHz WAV\\
+          Pegel-Upload & alle 3 s\\
+          Event-Upload & bei Weinen / alle 10 s\\
+          \bottomrule
+        \end{tabular}
+      \end{block}
+    \end{column}
+  \end{columns}
+
+  \vspace{0.7em}
+  \small
+  Im Sketch wird der analoge Eingang \texttt{SOUND\_PIN = 34} verwendet.
+  Die Empfindlichkeit wird über \texttt{CRY\_THRESHOLD} und das Potentiometer
+  des Mikrofons abgestimmt.
+\end{frame}
+
+\begin{frame}[fragile]{ESP32: Messlogik}
+  \begin{columns}[T,totalwidth=\textwidth]
+    \begin{column}{0.50\textwidth}
+      \begin{itemize}
+        \item Der ESP32 liest den analogen Mikrofonwert in kurzen Fenstern.
+        \item Der Pegel ist die Differenz zwischen höchstem und niedrigstem Wert.
+        \item Erst nach mehreren Treffern wird ein mögliches Weinen gemeldet.
+        \item Optional wird eine kurze WAV-Aufnahme als Base64 mitgesendet.
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.46\textwidth}
+\begin{lstlisting}[language=C++]
+SoundReading reading = readSound();
+bool loudEnough =
+  reading.level >= CRY_THRESHOLD;
+
+if (loudEnough) {
+  cryHitCount++;
+} else {
+  cryHitCount = 0;
+}
+
+bool crying =
+  cryHitCount >= CRY_HITS_REQUIRED;
+\end{lstlisting}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}[fragile]{HTTP-Daten}
+  \begin{columns}[T,totalwidth=\textwidth]
+    \begin{column}{0.47\textwidth}
+      \begin{block}{Events}
+        \apiendpoint{POST /api/events}
+        \begin{lstlisting}[language=json]
+{
+  "deviceId": "esp32-1",
+  "crying": true,
+  "volume": 86,
+  "confidence": 0.82,
+  "mimeType": "audio/wav",
+  "audioBase64": "..."
+}
+        \end{lstlisting}
+      \end{block}
+    \end{column}
+    \begin{column}{0.47\textwidth}
+      \begin{block}{Lautstärke}
+        \apiendpoint{POST /api/volume}
+        \begin{lstlisting}[language=json]
+{
+  "deviceId": "esp32-1",
+  "volume": 1400
+}
+        \end{lstlisting}
+      \end{block}
+    \end{column}
+  \end{columns}
+
+  \vspace{0.4em}
+  \small
+  Die App liest später über \apiendpoint{GET /api/events} und
+  \apiendpoint{GET /api/volume} die letzten Meldungen.
+\end{frame}
+
+\begin{frame}{Server und KI-Bewertung}
+  \small
+  \begin{columns}[T,totalwidth=\textwidth]
+    \begin{column}{0.52\textwidth}
+      \begin{block}{Aufgaben des Go-Servers}
+        \begin{itemize}
+          \item REST-Endpunkte für ESP32 und App
+          \item Speicherung der letzten Events und Pegel im Arbeitsspeicher
+          \item CORS für Flutter-Web
+          \item Server-Sent Events vorbereitet über \apiendpoint{/api/events/stream}
+        \end{itemize}
+      \end{block}
+    \end{column}
+    \begin{column}{0.42\textwidth}
+      \begin{block}{Gemini optional}
+        \begin{itemize}
+          \item Audio wird als \texttt{audio/wav} übertragen.
+          \item Gemini liefert \texttt{crying}, \texttt{confidence}, \texttt{message}.
+          \item Ohne API-Key oder bei Fehlern nutzt der Server lokale Regeln.
+        \end{itemize}
+      \end{block}
+    \end{column}
+  \end{columns}
+
+  \vspace{0.2em}
+  \centering
+  \begin{tikzpicture}[node distance=0.75cm, scale=0.75, transform shape]
+    \node[smallcomponent] (request) {ESP32\\Event};
+    \node[smallcomponent, right=1.0cm of request] (server) {Go\\Server};
+    \node[smallcomponent, right=1.0cm of server] (choice) {Audio?\\Key?};
+    \node[smallcomponent, above right=0.35cm and 0.85cm of choice, fill=MeidanPanel] (ai) {Gemini\\Urteil};
+    \node[smallcomponent, below right=0.35cm and 0.85cm of choice, fill=MeidanPanel] (local) {Lokaler\\Fallback};
+    \node[smallcomponent, right=3.05cm of choice] (event) {Event\\für App};
+    \draw[flow] (request) -- (server);
+    \draw[flow] (server) -- (choice);
+    \draw[altflow] (choice) -- (ai);
+    \draw[altflow] (choice) -- (local);
+    \draw[flow] (ai) -- (event);
+    \draw[flow] (local) -- (event);
+  \end{tikzpicture}
+\end{frame}
+
+\begin{frame}{Flutter-App für Eltern}
+  \small
+  \begin{columns}[T,totalwidth=\textwidth]
+    \begin{column}{0.45\textwidth}
+      \begin{block}{Dashboard}
+        \begin{itemize}
+          \item Status: Bereit, Alles ruhig, Weinen erkannt, Sehr laut
+          \item aktueller Lautstärkepegel
+          \item Liste der letzten Ereignisse
+          \item Server-URL kann in der App gesetzt werden
+        \end{itemize}
+      \end{block}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \begin{block}{Benachrichtigung}
+        \begin{itemize}
+          \item App fragt Server alle 3 Sekunden ab.
+          \item Neue Warnungen können einen Warnton auslösen.
+          \item Testbuttons erlauben Demo ohne ESP32.
+        \end{itemize}
+      \end{block}
+      \vspace{0.5em}
+      \begin{tikzpicture}
+        \node[component, minimum width=4.9cm, minimum height=2.55cm, fill=MeidanPanel] (phone) {};
+        \node[anchor=north west, font=\small\bfseries, text=MeidanBlue] at ($(phone.north west)+(0.25,-0.25)$) {Meidan};
+        \node[anchor=west, text=MeidanRed, font=\small\bfseries] at ($(phone.west)+(0.35,0.35)$) {Weinen erkannt};
+        \node[anchor=west, text=MeidanMuted, font=\scriptsize] at ($(phone.west)+(0.35,0.0)$) {KI-Audioanalyse angefragt};
+        \node[anchor=west, text=MeidanOrange, font=\small] at ($(phone.west)+(0.35,-0.55)$) {Pegel: 1400};
+        \draw[MeidanBlue, line width=1pt] ($(phone.south west)+(0.35,0.45)$) -- ($(phone.south east)+(-0.35,0.45)$);
+      \end{tikzpicture}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Datenfluss in der Demo}
+  \centering
+  \begin{tikzpicture}[scale=0.82, transform shape,
+    flowstep/.style={smallcomponent, minimum width=2.5cm, minimum height=1.05cm},
+    node distance=0.85cm
+  ]
+    \node[flowstep] (s1) {1\\Geräusch};
+    \node[flowstep, right=of s1] (s2) {2\\ESP32 misst};
+    \node[flowstep, right=of s2] (s3) {3\\HTTP an Server};
+    \node[flowstep, right=of s3] (s4) {4\\Bewertung};
+    \node[flowstep, right=of s4] (s5) {5\\App-Warnung};
+    \draw[flow] (s1) -- (s2);
+    \draw[flow] (s2) -- (s3);
+    \draw[flow] (s3) -- (s4);
+    \draw[flow] (s4) -- (s5);
+  \end{tikzpicture}
+
+  \vspace{1em}
+  \begin{columns}[T,totalwidth=\textwidth]
+    \begin{column}{0.47\textwidth}
+      \begin{block}{Normaler Ablauf}
+        \begin{itemize}
+          \item Mikrofon erkennt niedrigen Pegel.
+          \item Server speichert ruhige Meldung.
+          \item App zeigt \enquote{Alles ruhig}.
+        \end{itemize}
+      \end{block}
+    \end{column}
+    \begin{column}{0.47\textwidth}
+      \begin{block}{Warnfall}
+        \begin{itemize}
+          \item Pegel überschreitet Schwellwert oder Audio wird als Weinen bewertet.
+          \item Server erzeugt Event vom Typ \texttt{cry} oder \texttt{loud}.
+          \item App zeigt Warnung und kann Ton abspielen.
+        \end{itemize}
+      \end{block}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}[fragile]{Demo-Plan}
+  \begin{columns}[T,totalwidth=\textwidth]
+    \begin{column}{0.52\textwidth}
+      \begin{enumerate}
+        \item Go-Server starten.
+        \item Flutter-Web-App starten.
+        \item ESP32 im Bär einschalten.
+        \item Ruhigen Zustand zeigen.
+        \item Geräusch / Testevent auslösen.
+        \item Warnung in der App erklären.
+      \end{enumerate}
+    \end{column}
+    \begin{column}{0.43\textwidth}
+\begin{lstlisting}[language=bash,basicstyle=\ttfamily\tiny]
+cd server
+go run .
+
+cd app
+flutter run -d web-server \
+  --web-port=8081 \
+  --dart-define=SERVER_URL=http://localhost:8080
+\end{lstlisting}
+    \end{column}
+  \end{columns}
+
+  \vspace{0.5em}
+  \small
+  Für eine Demo ohne Hardware können die Testbuttons in der App oder
+  \texttt{curl}-Requests aus der README verwendet werden.
+\end{frame}
+
+\begin{frame}{Grenzen des Prototyps}
+  \begin{itemize}
+    \item \textbf{Audioqualität:} Ein einfaches Mikrofon im Stoff kann gedämpft oder verrauscht sein.
+    \item \textbf{Kalibrierung:} Schwellwerte müssen an Raum, Mikrofon und Platzierung angepasst werden.
+    \item \textbf{Datenschutz:} Audioanalyse sollte bewusst aktiviert, erklärt und abgesichert werden.
+    \item \textbf{Energie:} Für einen echten Bär-Prototyp braucht es ein sicheres Akkukonzept.
+    \item \textbf{Robustheit:} WLAN-Ausfälle und Serverfehler müssen für den Alltag abgefangen werden.
+  \end{itemize}
+
+  \vspace{0.9em}
+  \begin{block}{Nächste Schritte}
+    Gehäuse und Kabelführung im Textil verbessern, echte Push-Benachrichtigungen
+    ergänzen und Messdaten mit realistischen Geräuschsituationen testen.
+  \end{block}
+\end{frame}
+
+\begin{frame}{Fazit}
+  \begin{columns}[T,totalwidth=\textwidth]
+    \begin{column}{0.50\textwidth}
+      \begin{block}{Was gezeigt wird}
+        \begin{itemize}
+          \item Ein Alltagsobjekt wird durch Sensorik interaktiv.
+          \item ESP32, Server und App bilden eine vollständige Kette.
+          \item KI kann die lokale Messlogik ergänzen, ist aber nicht zwingend nötig.
+        \end{itemize}
+      \end{block}
+    \end{column}
+    \begin{column}{0.44\textwidth}
+      \begin{block}{Kernaussage}
+        Interaktive Textilien müssen nicht sichtbar technisch wirken:
+        Der Bär bleibt ein weiches Objekt, reagiert aber über die digitale
+        Infrastruktur auf seine Umgebung.
+      \end{block}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\appendix
+\begin{frame}{Backup: API-Endpunkte}
+  \begin{tabular}{lll}
+    \toprule
+    Methode & Pfad & Zweck\\
+    \midrule
+    GET & \apiendpoint{/health} & Serverstatus\\
+    GET & \apiendpoint{/api/events} & letzte Events\\
+    POST & \apiendpoint{/api/events} & Weinen-/Ruhe-Event anlegen\\
+    GET & \apiendpoint{/api/events/stream} & Event-Stream\\
+    GET & \apiendpoint{/api/volume} & letzte Pegelwerte\\
+    POST & \apiendpoint{/api/volume} & Pegelwert anlegen\\
+    \bottomrule
+  \end{tabular}
+\end{frame}
+
+\end{document}

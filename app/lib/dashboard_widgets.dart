@@ -188,69 +188,47 @@ class ServerCard extends StatelessWidget {
   }
 }
 
-class DashboardActionBar extends StatelessWidget {
-  const DashboardActionBar({
+class SoundSettingsCard extends StatelessWidget {
+  const SoundSettingsCard({
     super.key,
-    required this.onCry,
-    required this.onLoud,
-    required this.onQuiet,
     required this.onSound,
     required this.soundEnabled,
+    required this.error,
   });
 
-  final VoidCallback onCry;
-  final VoidCallback onLoud;
-  final VoidCallback onQuiet;
   final VoidCallback onSound;
   final bool soundEnabled;
+  final String? error;
 
   @override
   Widget build(BuildContext context) {
-    final buttons = [
-      FilledButton.icon(
-        onPressed: onCry,
-        icon: const Icon(Icons.notifications_active),
-        label: const Text('Weinen'),
-      ),
-      FilledButton.tonalIcon(
-        onPressed: onLoud,
-        icon: const Icon(Icons.volume_up),
-        label: const Text('Laut'),
-      ),
-      OutlinedButton.icon(
-        onPressed: onQuiet,
-        icon: const Icon(Icons.check_circle),
-        label: const Text('Ruhig'),
-      ),
-      OutlinedButton.icon(
-        onPressed: onSound,
-        icon: Icon(soundEnabled ? Icons.volume_off : Icons.volume_up),
-        label: Text(soundEnabled ? 'Ton aus' : 'Ton ein'),
-      ),
-    ];
-
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        if (constraints.maxWidth < 520) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              for (var i = 0; i < buttons.length; i++) ...[
-                buttons[i],
-                if (i != buttons.length - 1) const SizedBox(height: 8),
-              ],
-            ],
-          );
-        }
-        return Row(
-          children: [
-            for (var i = 0; i < buttons.length; i++) ...[
-              Expanded(child: buttons[i]),
-              if (i != buttons.length - 1) const SizedBox(width: 10),
-            ],
+    return Panel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const PanelTitle(
+            icon: Icons.volume_up,
+            title: 'Ton',
+            color: Color(0xFF2563EB),
+          ),
+          const SizedBox(height: 14),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: onSound,
+              icon: Icon(soundEnabled ? Icons.volume_off : Icons.volume_up),
+              label: Text(soundEnabled ? 'Ton aus' : 'Ton ein'),
+            ),
+          ),
+          if (error != null) ...[
+            const SizedBox(height: 10),
+            Text(
+              error!,
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
           ],
-        );
-      },
+        ],
+      ),
     );
   }
 }

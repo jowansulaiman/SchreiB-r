@@ -20,6 +20,12 @@ cd server
 GEMINI_API_KEY="dein-key" go run .
 ```
 
+Bei temporaeren Gemini-Fehlern wie `503 Service Unavailable` versucht der Server automatisch kurz erneut und wechselt danach auf Fallback-Modelle. Aendern geht so:
+
+```sh
+GEMINI_API_KEY="dein-key" GEMINI_MODEL="gemini-2.5-flash" GEMINI_FALLBACK_MODELS="gemini-2.0-flash,gemini-2.5-flash-lite" go run .
+```
+
 Standard-Port ist `:8080`. Aendern geht mit:
 
 ```sh

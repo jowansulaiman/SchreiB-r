@@ -22,7 +22,7 @@ type config struct {
 	threshold     float64
 	loudThreshold float64
 	geminiKey     string
-	geminiModel   string
+	geminiModels  []string
 }
 
 type sensorRequest struct {
@@ -84,13 +84,23 @@ type verdict struct {
 	Reason     string  `json:"reason"`
 }
 
+type geminiHTTPError struct {
+	statusCode int
+	status     string
+	body       string
+}
+
+func (e geminiHTTPError) Error() string {
+	return fmt.Sprintf("gemini returned %s: %s", e.status, strings.TrimSpace(e.body))
+}
+
 func main() {
 	cfg := config{
 		addr:          env("ADDR", ":8080"),
 		threshold:     envFloat("VOLUME_THRESHOLD", 65),
 		loudThreshold: envFloat("LOUD_VOLUME_THRESHOLD", 1000),
 		geminiKey:     os.Getenv("GEMINI_API_KEY"),
-		geminiModel:   env("GEMINI_MODEL", "gemini-3-flash-preview"),
+		geminiModels:  geminiModelList(env("GEMINI_MODEL", "gemini-2.5-flash"), env("GEMINI_FALLBACK_MODELS", "gemini-2.0-flash,gemini-2.5-flash-lite")),
 	}
 
 	appState := &state{subscribers: make(map[chan cryEvent]struct{})}
@@ -255,8 +265,9 @@ func buildEvent(ctx context.Context, cfg config, req sensorRequest) (cryEvent, e
 				result = geminiResult
 				source = "gemini"
 			} else {
+				log.Printf("gemini analysis failed: %v", err)
 				result = localVerdict(cfg, req)
-				result.Message = "Gemini nicht erreichbar, lokal bewertet"
+				result.Message = geminiFallbackMessage(err)
 				source = "local-fallback"
 			}
 		} else {
@@ -360,6 +371,53 @@ func localVerdict(cfg config, req sensorRequest) verdict {
 	}
 }
 
+func geminiFallbackMessage(err error) string {
+	if err == nil {
+		return "Gemini nicht erreichbar, lokal bewertet"
+	}
+
+	message := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(message, "api key not valid") || strings.Contains(message, "api_key_invalid"):
+		return "Gemini API-Key ungueltig, lokal bewertet"
+	case strings.Contains(message, "permission_denied") || strings.Contains(message, "api has not been used"):
+		return "Gemini API-Zugriff nicht erlaubt, lokal bewertet"
+	case strings.Contains(message, "resource_exhausted") || strings.Contains(message, "quota"):
+		return "Gemini Limit erreicht, lokal bewertet"
+	case strings.Contains(message, "service unavailable") || strings.Contains(message, "unavailable") || strings.Contains(message, "high demand"):
+		return "Gemini ueberlastet, lokal bewertet"
+	case strings.Contains(message, "not found") || strings.Contains(message, "not supported for generatecontent"):
+		return "Gemini-Modell nicht verfuegbar, lokal bewertet"
+	case strings.Contains(message, "deadline") || strings.Contains(message, "timeout"):
+		return "Gemini Timeout, lokal bewertet"
+	default:
+		return "Gemini nicht erreichbar, lokal bewertet"
+	}
+}
+
+func geminiModelList(primary string, fallbacks string) []string {
+	models := make([]string, 0, 3)
+	seen := make(map[string]struct{})
+
+	add := func(value string) {
+		model := strings.TrimSpace(value)
+		if model == "" {
+			return
+		}
+		if _, ok := seen[model]; ok {
+			return
+		}
+		seen[model] = struct{}{}
+		models = append(models, model)
+	}
+
+	add(primary)
+	for _, fallback := range strings.Split(fallbacks, ",") {
+		add(fallback)
+	}
+	return models
+}
+
 func analyzeWithGemini(ctx context.Context, cfg config, req sensorRequest) (verdict, error) {
 	audio, mimeType, err := normalizeAudio(req.AudioBase64, req.MimeType)
 	if err != nil {
@@ -389,10 +447,58 @@ func analyzeWithGemini(ctx context.Context, cfg config, req sensorRequest) (verd
 		return verdict{}, err
 	}
 
-	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent", cfg.geminiModel)
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(data))
+	text, err := generateGeminiText(ctx, cfg, data)
 	if err != nil {
 		return verdict{}, err
+	}
+
+	var result verdict
+	if err := json.Unmarshal([]byte(extractJSON(text)), &result); err != nil {
+		return verdict{}, err
+	}
+	return result, nil
+}
+
+func generateGeminiText(ctx context.Context, cfg config, data []byte) (string, error) {
+	var lastErr error
+	for modelIndex, model := range cfg.geminiModels {
+		for attempt := 1; attempt <= 2; attempt++ {
+			text, err := callGeminiModel(ctx, cfg, model, data)
+			if err == nil {
+				if modelIndex > 0 || attempt > 1 {
+					log.Printf("gemini analysis succeeded with model %s after fallback/retry", model)
+				}
+				return text, nil
+			}
+
+			lastErr = err
+			if !isTemporaryGeminiError(err) {
+				return "", err
+			}
+			if attempt < 2 {
+				log.Printf("gemini temporary failure on model %s, retrying: %v", model, err)
+				if err := waitForRetry(ctx, 750*time.Millisecond); err != nil {
+					return "", err
+				}
+			}
+		}
+
+		if modelIndex+1 < len(cfg.geminiModels) {
+			log.Printf("gemini model %s unavailable, trying fallback model %s", model, cfg.geminiModels[modelIndex+1])
+		}
+	}
+
+	if lastErr != nil {
+		return "", lastErr
+	}
+	return "", errors.New("no gemini models configured")
+}
+
+func callGeminiModel(ctx context.Context, cfg config, model string, data []byte) (string, error) {
+	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent", model)
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(data))
+	if err != nil {
+		return "", err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("x-goog-api-key", cfg.geminiKey)
@@ -400,16 +506,20 @@ func analyzeWithGemini(ctx context.Context, cfg config, req sensorRequest) (verd
 	client := &http.Client{Timeout: 20 * time.Second}
 	resp, err := client.Do(httpReq)
 	if err != nil {
-		return verdict{}, err
+		return "", err
 	}
 	defer resp.Body.Close()
 
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
 	if err != nil {
-		return verdict{}, err
+		return "", err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return verdict{}, fmt.Errorf("gemini returned %s: %s", resp.Status, strings.TrimSpace(string(respBody)))
+		return "", geminiHTTPError{
+			statusCode: resp.StatusCode,
+			status:     resp.Status,
+			body:       string(respBody),
+		}
 	}
 
 	var geminiResp struct {
@@ -422,18 +532,35 @@ func analyzeWithGemini(ctx context.Context, cfg config, req sensorRequest) (verd
 		} `json:"candidates"`
 	}
 	if err := json.Unmarshal(respBody, &geminiResp); err != nil {
-		return verdict{}, err
+		return "", err
 	}
 	if len(geminiResp.Candidates) == 0 || len(geminiResp.Candidates[0].Content.Parts) == 0 {
-		return verdict{}, errors.New("gemini returned no text")
+		return "", errors.New("gemini returned no text")
 	}
 
-	text := geminiResp.Candidates[0].Content.Parts[0].Text
-	var result verdict
-	if err := json.Unmarshal([]byte(extractJSON(text)), &result); err != nil {
-		return verdict{}, err
+	return geminiResp.Candidates[0].Content.Parts[0].Text, nil
+}
+
+func isTemporaryGeminiError(err error) bool {
+	var httpErr geminiHTTPError
+	if errors.As(err, &httpErr) {
+		return httpErr.statusCode == http.StatusTooManyRequests || httpErr.statusCode == http.StatusServiceUnavailable || httpErr.statusCode >= 500
 	}
-	return result, nil
+
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "timeout") || strings.Contains(message, "deadline") || strings.Contains(message, "temporary")
+}
+
+func waitForRetry(ctx context.Context, delay time.Duration) error {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 func normalizeAudio(raw string, mimeType string) (string, string, error) {

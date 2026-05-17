@@ -88,23 +88,6 @@ class _DashboardPageState extends State<DashboardPage> {
     }
   }
 
-  Future<void> _sendCryTest(bool crying) async {
-    await _send(() => MeidanApi(_serverUrl).sendCryTest(crying));
-  }
-
-  Future<void> _sendVolumeTest(bool loud) async {
-    await _send(() => MeidanApi(_serverUrl).sendVolumeTest(loud));
-  }
-
-  Future<void> _send(Future<void> Function() action) async {
-    try {
-      await action();
-      await _loadData();
-    } catch (error) {
-      if (mounted) setState(() => _error = error.toString());
-    }
-  }
-
   Future<void> _toggleSound() async {
     if (_soundEnabled) {
       await _audio.stop();
@@ -138,7 +121,6 @@ class _DashboardPageState extends State<DashboardPage> {
   @override
   Widget build(BuildContext context) {
     final status = _status();
-    final visibleError = _error ?? _soundError;
 
     return Scaffold(
       appBar: AppBar(
@@ -151,39 +133,60 @@ class _DashboardPageState extends State<DashboardPage> {
             tooltip: 'Aktualisieren',
             icon: const Icon(Icons.refresh),
           ),
+          IconButton(
+            onPressed: _openSettings,
+            tooltip: 'Einstellungen',
+            icon: const Icon(Icons.settings),
+          ),
         ],
       ),
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              StatusCard(status: status, event: _latestEvent),
-              const SizedBox(height: 12),
-              _responsiveRow(
-                children: [
-                  VolumeCard(reading: _latestVolume),
-                  ServerCard(
-                    controller: _serverController,
-                    error: visibleError,
-                    onSubmitted: _loadData,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              DashboardActionBar(
-                onCry: () => _sendCryTest(true),
-                onLoud: () => _sendVolumeTest(true),
-                onQuiet: () => _sendCryTest(false),
-                onSound: _toggleSound,
+        child: _dashboardBody(status),
+      ),
+    );
+  }
+
+  Future<void> _openSettings() {
+    return Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (settingsContext) {
+          return StatefulBuilder(
+            builder: (settingsContext, setSettingsState) {
+              Future<void> refreshSettings(
+                  Future<void> Function() action) async {
+                await action();
+                if (settingsContext.mounted) {
+                  setSettingsState(() {});
+                }
+              }
+
+              return _SettingsPage(
+                serverController: _serverController,
+                serverError: _error,
+                onServerSubmitted: () => refreshSettings(_loadData),
+                onSound: () => refreshSettings(_toggleSound),
                 soundEnabled: _soundEnabled,
-              ),
-              const SizedBox(height: 16),
-              Expanded(child: EventList(events: _events)),
-            ],
-          ),
-        ),
+                soundError: _soundError,
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _dashboardBody(DashboardStatus status) {
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          StatusCard(status: status, event: _latestEvent),
+          const SizedBox(height: 12),
+          VolumeCard(reading: _latestVolume),
+          const SizedBox(height: 16),
+          Expanded(child: EventList(events: _events)),
+        ],
       ),
     );
   }
@@ -222,31 +225,6 @@ class _DashboardPageState extends State<DashboardPage> {
     );
   }
 
-  Widget _responsiveRow({required List<Widget> children}) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        if (constraints.maxWidth < 720) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              children[0],
-              const SizedBox(height: 12),
-              children[1],
-            ],
-          );
-        }
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(child: children[0]),
-            const SizedBox(width: 12),
-            Expanded(child: children[1]),
-          ],
-        );
-      },
-    );
-  }
-
   CryEvent? _latestAlert(List<CryEvent> events) {
     for (final event in events) {
       if (event.isAlert) return event;
@@ -267,5 +245,55 @@ class _DashboardPageState extends State<DashboardPage> {
         });
       }
     }
+  }
+}
+
+class _SettingsPage extends StatelessWidget {
+  const _SettingsPage({
+    required this.serverController,
+    required this.serverError,
+    required this.onServerSubmitted,
+    required this.onSound,
+    required this.soundEnabled,
+    required this.soundError,
+  });
+
+  final TextEditingController serverController;
+  final String? serverError;
+  final VoidCallback onServerSubmitted;
+  final VoidCallback onSound;
+  final bool soundEnabled;
+  final String? soundError;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Einstellungen'),
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.white,
+      ),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              ServerCard(
+                controller: serverController,
+                error: serverError,
+                onSubmitted: onServerSubmitted,
+              ),
+              const SizedBox(height: 12),
+              SoundSettingsCard(
+                onSound: onSound,
+                soundEnabled: soundEnabled,
+                error: soundError,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }

@@ -21,6 +21,9 @@ type config struct {
 	addr          string
 	threshold     float64
 	loudThreshold float64
+	aiProvider    string
+	openAIKey     string
+	openAIModel   string
 	geminiKey     string
 	geminiModels  []string
 }
@@ -94,14 +97,20 @@ func (e geminiHTTPError) Error() string {
 	return fmt.Sprintf("gemini returned %s: %s", e.status, strings.TrimSpace(e.body))
 }
 
+type openAIHTTPError struct {
+	statusCode int
+	status     string
+	body       string
+}
+
+func (e openAIHTTPError) Error() string {
+	return fmt.Sprintf("openai returned %s: %s", e.status, strings.TrimSpace(e.body))
+}
+
+var errNoAIProvider = errors.New("no ai provider configured")
+
 func main() {
-	cfg := config{
-		addr:          env("ADDR", ":8080"),
-		threshold:     envFloat("VOLUME_THRESHOLD", 65),
-		loudThreshold: envFloat("LOUD_VOLUME_THRESHOLD", 1000),
-		geminiKey:     os.Getenv("GEMINI_API_KEY"),
-		geminiModels:  geminiModelList(env("GEMINI_MODEL", "gemini-2.5-flash"), env("GEMINI_FALLBACK_MODELS", "gemini-2.0-flash,gemini-2.5-flash-lite")),
-	}
+	cfg := loadConfig()
 
 	appState := &state{subscribers: make(map[chan cryEvent]struct{})}
 	mux := http.NewServeMux()
@@ -119,6 +128,37 @@ func main() {
 
 	log.Printf("meidan server listening on %s", cfg.addr)
 	log.Fatal(server.ListenAndServe())
+}
+
+func loadConfig() config {
+	aiProvider := normalizeAIProvider(env("AI_PROVIDER", "auto"))
+	genericAIKey := strings.TrimSpace(os.Getenv("AI_API_KEY"))
+	openAIKey := firstEnv("OPENAI_API_KEY", "CHATGPT_API_KEY")
+	geminiKey := strings.TrimSpace(os.Getenv("GEMINI_API_KEY"))
+
+	if genericAIKey != "" {
+		switch aiProvider {
+		case "openai":
+			if openAIKey == "" {
+				openAIKey = genericAIKey
+			}
+		case "gemini":
+			if geminiKey == "" {
+				geminiKey = genericAIKey
+			}
+		}
+	}
+
+	return config{
+		addr:          env("ADDR", ":8080"),
+		threshold:     envFloat("VOLUME_THRESHOLD", 65),
+		loudThreshold: envFloat("LOUD_VOLUME_THRESHOLD", 1000),
+		aiProvider:    aiProvider,
+		openAIKey:     openAIKey,
+		openAIModel:   env("OPENAI_MODEL", "gpt-audio-mini"),
+		geminiKey:     geminiKey,
+		geminiModels:  geminiModelList(env("GEMINI_MODEL", "gemini-2.5-flash"), env("GEMINI_FALLBACK_MODELS", "gemini-2.0-flash,gemini-2.5-flash-lite")),
+	}
 }
 
 func handleRoot(w http.ResponseWriter, r *http.Request) {
@@ -257,31 +297,31 @@ func buildEvent(ctx context.Context, cfg config, req sensorRequest) (cryEvent, e
 
 	result := verdict{}
 	source := "local"
+	localResult := localVerdict(cfg, req)
 
 	if strings.TrimSpace(req.AudioBase64) != "" {
-		if cfg.geminiKey != "" {
-			geminiResult, err := analyzeWithGemini(ctx, cfg, req)
+		if cfg.aiProvider == "local" {
+			result = localResult
+			source = "local"
+		} else {
+			aiResult, aiSource, err := analyzeWithConfiguredAI(ctx, cfg, req, localResult)
 			if err == nil {
-				result = geminiResult
-				source = "gemini"
+				result = aiResult
+				source = aiSource
 			} else {
-				log.Printf("gemini analysis failed: %v", err)
-				result = localVerdict(cfg, req)
-				result.Message = geminiFallbackMessage(err)
+				if !errors.Is(err, errNoAIProvider) {
+					log.Printf("ai analysis failed: %v", err)
+				}
+				result = localResult
+				result.Message = aiFallbackMessage(err)
 				source = "local-fallback"
 			}
-		} else {
-			result = localVerdict(cfg, req)
-			result.Message = "Kein Gemini-Key, lokal bewertet"
-			source = "local"
 		}
 	} else if req.Crying != nil {
-		result.Crying = *req.Crying
-		result.Confidence = confidence(req.Confidence, result.Crying, req.Volume, cfg.threshold)
-		result.Message = strings.TrimSpace(req.Message)
+		result = localResult
 		source = "sensor"
 	} else {
-		result = localVerdict(cfg, req)
+		result = localResult
 	}
 
 	if result.Message == "" {
@@ -360,14 +400,164 @@ func buildLoudEvent(reading volumeReading) cryEvent {
 
 func localVerdict(cfg config, req sensorRequest) verdict {
 	crying := req.Volume >= cfg.threshold
-	if req.Crying != nil {
-		crying = *req.Crying
+	if req.Crying != nil && *req.Crying {
+		crying = true
 	}
 
 	return verdict{
 		Crying:     crying,
 		Confidence: confidence(req.Confidence, crying, req.Volume, cfg.threshold),
 		Message:    strings.TrimSpace(req.Message),
+	}
+}
+
+func analyzeWithConfiguredAI(ctx context.Context, cfg config, req sensorRequest, localResult verdict) (verdict, string, error) {
+	providers := aiProviders(cfg)
+	if len(providers) == 0 {
+		return verdict{}, "", errNoAIProvider
+	}
+
+	var lastErr error
+	for _, provider := range providers {
+		var aiResult verdict
+		var err error
+
+		switch provider {
+		case "openai":
+			aiResult, err = analyzeWithOpenAI(ctx, cfg, req, localResult)
+		case "gemini":
+			aiResult, err = analyzeWithGemini(ctx, cfg, req, localResult)
+		default:
+			err = fmt.Errorf("unsupported ai provider %q", provider)
+		}
+
+		if err == nil {
+			return mergeAIVerdict(localResult, aiResult), mergedSource(provider, localResult, aiResult), nil
+		}
+		lastErr = err
+		log.Printf("%s analysis failed: %v", provider, err)
+	}
+
+	if lastErr == nil {
+		lastErr = errNoAIProvider
+	}
+	return verdict{}, "", lastErr
+}
+
+func aiProviders(cfg config) []string {
+	switch cfg.aiProvider {
+	case "openai":
+		if cfg.openAIKey == "" {
+			return nil
+		}
+		return []string{"openai"}
+	case "gemini":
+		if cfg.geminiKey == "" {
+			return nil
+		}
+		return []string{"gemini"}
+	case "local":
+		return nil
+	default:
+		providers := make([]string, 0, 2)
+		if cfg.openAIKey != "" {
+			providers = append(providers, "openai")
+		}
+		if cfg.geminiKey != "" {
+			providers = append(providers, "gemini")
+		}
+		return providers
+	}
+}
+
+func mergeAIVerdict(localResult verdict, aiResult verdict) verdict {
+	if !localResult.Crying {
+		return aiResult
+	}
+	if aiResult.Crying {
+		aiResult.Confidence = maxFloat(aiResult.Confidence, localResult.Confidence)
+		if strings.TrimSpace(aiResult.Message) == "" {
+			aiResult.Message = localResult.Message
+		}
+		return aiResult
+	}
+
+	message := "Sensor meldet moegliches Weinen; KI-Audio nicht eindeutig"
+	if localMessage := strings.TrimSpace(localResult.Message); localMessage != "" && looksCryMessage(localMessage) && !looksQuietMessage(localMessage) {
+		message = localMessage
+	}
+	return verdict{
+		Crying:     true,
+		Confidence: clamp(localResult.Confidence, 0.6, 0.88),
+		Message:    message,
+		Reason:     "local sensor reported crying while AI did not",
+	}
+}
+
+func mergedSource(provider string, localResult verdict, aiResult verdict) string {
+	if localResult.Crying {
+		if aiResult.Crying {
+			return "sensor+" + provider
+		}
+		return "sensor"
+	}
+	return provider
+}
+
+func looksQuietMessage(message string) bool {
+	normalized := strings.ToLower(message)
+	return strings.Contains(normalized, "ruhig") ||
+		strings.Contains(normalized, "kein weinen") ||
+		strings.Contains(normalized, "kein baby")
+}
+
+func looksCryMessage(message string) bool {
+	normalized := strings.ToLower(message)
+	return strings.Contains(normalized, "weinen") ||
+		strings.Contains(normalized, "schrei") ||
+		strings.Contains(normalized, "cry")
+}
+
+func aiFallbackMessage(err error) string {
+	if errors.Is(err, errNoAIProvider) {
+		return "Kein KI-Key, lokal bewertet"
+	}
+
+	var openAIError openAIHTTPError
+	if errors.As(err, &openAIError) {
+		return openAIFallbackMessage(openAIError)
+	}
+
+	var geminiError geminiHTTPError
+	if errors.As(err, &geminiError) {
+		return geminiFallbackMessage(geminiError)
+	}
+
+	message := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(message, "openai"):
+		return "OpenAI nicht erreichbar, lokal bewertet"
+	case strings.Contains(message, "gemini"):
+		return "Gemini nicht erreichbar, lokal bewertet"
+	case strings.Contains(message, "deadline") || strings.Contains(message, "timeout"):
+		return "KI Timeout, lokal bewertet"
+	default:
+		return "KI nicht erreichbar, lokal bewertet"
+	}
+}
+
+func openAIFallbackMessage(err openAIHTTPError) string {
+	switch {
+	case err.statusCode == http.StatusUnauthorized || err.statusCode == http.StatusForbidden:
+		return "OpenAI API-Key ungueltig oder Zugriff nicht erlaubt, lokal bewertet"
+	case err.statusCode == http.StatusTooManyRequests:
+		return "OpenAI Limit erreicht, lokal bewertet"
+	case err.statusCode == http.StatusNotFound:
+		return "OpenAI-Modell nicht verfuegbar, lokal bewertet"
+	case err.statusCode >= 500:
+		return "OpenAI nicht erreichbar, lokal bewertet"
+	default:
+		return "OpenAI Anfrage abgelehnt, lokal bewertet"
 	}
 }
 
@@ -418,7 +608,160 @@ func geminiModelList(primary string, fallbacks string) []string {
 	return models
 }
 
-func analyzeWithGemini(ctx context.Context, cfg config, req sensorRequest) (verdict, error) {
+func babyCryPrompt(cfg config, req sensorRequest, localResult verdict) string {
+	return fmt.Sprintf(
+		"You are a baby-cry classifier. Decide if this audio contains a crying baby. "+
+			"Return only JSON with keys crying (boolean), confidence (0.0 to 1.0), and message (short German text). "+
+			"Sensor context: volume=%.0f, localCrying=%t, threshold=%.0f. "+
+			"The recording comes from a small ESP32 analog microphone and can be noisy or quiet. "+
+			"If localCrying is true and the audio is ambiguous, return crying true with moderate confidence and mention uncertainty in German. "+
+			"Only return crying false when baby crying is not plausible.",
+		req.Volume,
+		localResult.Crying,
+		cfg.threshold,
+	)
+}
+
+func analyzeWithOpenAI(ctx context.Context, cfg config, req sensorRequest, localResult verdict) (verdict, error) {
+	audio, mimeType, err := normalizeAudio(req.AudioBase64, req.MimeType)
+	if err != nil {
+		return verdict{}, err
+	}
+	format, err := openAIAudioFormat(mimeType)
+	if err != nil {
+		return verdict{}, err
+	}
+
+	payload := map[string]any{
+		"model": cfg.openAIModel,
+		"messages": []any{
+			map[string]any{
+				"role":    "system",
+				"content": babyCryPrompt(cfg, req, localResult),
+			},
+			map[string]any{
+				"role": "user",
+				"content": []any{
+					map[string]any{
+						"type": "text",
+						"text": "Analysiere das Audio. Antworte ausschliesslich mit dem JSON-Objekt.",
+					},
+					map[string]any{
+						"type": "input_audio",
+						"input_audio": map[string]any{
+							"data":   audio,
+							"format": format,
+						},
+					},
+				},
+			},
+		},
+		"max_completion_tokens": 160,
+	}
+
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return verdict{}, err
+	}
+
+	text, err := callOpenAIChat(ctx, cfg, data)
+	if err != nil {
+		return verdict{}, err
+	}
+
+	var result verdict
+	if err := json.Unmarshal([]byte(extractJSON(text)), &result); err != nil {
+		return verdict{}, err
+	}
+	return result, nil
+}
+
+func openAIAudioFormat(mimeType string) (string, error) {
+	mimeType = strings.ToLower(strings.TrimSpace(strings.Split(mimeType, ";")[0]))
+	switch mimeType {
+	case "audio/wav", "audio/wave", "audio/x-wav":
+		return "wav", nil
+	case "audio/mpeg", "audio/mp3", "audio/mpga":
+		return "mp3", nil
+	default:
+		if strings.Contains(mimeType, "wav") {
+			return "wav", nil
+		}
+		if strings.Contains(mimeType, "mp3") || strings.Contains(mimeType, "mpeg") {
+			return "mp3", nil
+		}
+		return "", fmt.Errorf("openai audio format not supported for MIME type %q", mimeType)
+	}
+}
+
+func callOpenAIChat(ctx context.Context, cfg config, data []byte) (string, error) {
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.openai.com/v1/chat/completions", bytes.NewReader(data))
+	if err != nil {
+		return "", err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+cfg.openAIKey)
+
+	client := &http.Client{Timeout: 20 * time.Second}
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
+	if err != nil {
+		return "", err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", openAIHTTPError{
+			statusCode: resp.StatusCode,
+			status:     resp.Status,
+			body:       string(respBody),
+		}
+	}
+
+	var openAIResp struct {
+		Choices []struct {
+			Message struct {
+				Content json.RawMessage `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.Unmarshal(respBody, &openAIResp); err != nil {
+		return "", err
+	}
+	if len(openAIResp.Choices) == 0 {
+		return "", errors.New("openai returned no choices")
+	}
+
+	text := openAIMessageText(openAIResp.Choices[0].Message.Content)
+	if strings.TrimSpace(text) == "" {
+		return "", errors.New("openai returned no text")
+	}
+	return text, nil
+}
+
+func openAIMessageText(raw json.RawMessage) string {
+	var text string
+	if err := json.Unmarshal(raw, &text); err == nil {
+		return text
+	}
+
+	var parts []struct {
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal(raw, &parts); err == nil {
+		var builder strings.Builder
+		for _, part := range parts {
+			builder.WriteString(part.Text)
+		}
+		return builder.String()
+	}
+	return ""
+}
+
+func analyzeWithGemini(ctx context.Context, cfg config, req sensorRequest, localResult verdict) (verdict, error) {
 	audio, mimeType, err := normalizeAudio(req.AudioBase64, req.MimeType)
 	if err != nil {
 		return verdict{}, err
@@ -429,7 +772,7 @@ func analyzeWithGemini(ctx context.Context, cfg config, req sensorRequest) (verd
 			map[string]any{
 				"parts": []any{
 					map[string]any{
-						"text": "You are a baby-cry classifier. Decide if this audio contains a crying baby. Return only JSON with keys crying (boolean), confidence (0.0 to 1.0), and message (short German text).",
+						"text": babyCryPrompt(cfg, req, localResult),
 					},
 					map[string]any{
 						"inline_data": map[string]any{
@@ -710,7 +1053,10 @@ func cors(next http.Handler) http.Handler {
 
 func confidence(raw *float64, crying bool, volume float64, threshold float64) float64 {
 	if raw != nil {
-		return *raw
+		if crying {
+			return clamp(*raw, 0.55, 1)
+		}
+		return clamp(*raw, 0, 0.8)
 	}
 	if threshold <= 0 {
 		threshold = 1
@@ -729,6 +1075,38 @@ func clamp(value, minValue, maxValue float64) float64 {
 		return maxValue
 	}
 	return value
+}
+
+func maxFloat(a, b float64) float64 {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func normalizeAIProvider(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "auto":
+		return "auto"
+	case "openai", "chatgpt", "chatgbt", "gpt":
+		return "openai"
+	case "gemini", "google":
+		return "gemini"
+	case "local", "none", "off":
+		return "local"
+	default:
+		return "auto"
+	}
+}
+
+func firstEnv(keys ...string) string {
+	for _, key := range keys {
+		value := strings.TrimSpace(os.Getenv(key))
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func env(key string, fallback string) string {

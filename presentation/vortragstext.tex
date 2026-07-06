@@ -1,0 +1,152 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[ngerman]{babel}
+\usepackage{lmodern}
+\usepackage{geometry}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{hyperref}
+
+\geometry{margin=2.5cm}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.75em}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue,
+  urlcolor=blue
+}
+
+\newcommand{\folie}[2]{%
+  \section*{Folie #1: #2}
+}
+
+\title{Vortragstext zur Präsentation\\
+\large Teddybär als Baby-Weinen-Alarm}
+\author{Projektvorstellung}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\section*{Hinweis}
+Dieser Text ist als Sprechtext gedacht. Er muss nicht wortwörtlich
+abgelesen werden, sondern kann als Orientierung für die Präsentation
+verwendet werden.
+
+\folie{1}{Titelfolie}
+Guten Tag, ich stelle heute meinen Prototypen \glqq Teddybär als
+Baby-Weinen-Alarm\grqq{} vor.
+
+In dem Projekt geht es um ein interaktives Textil. Ein normales,
+vertrautes Objekt, nämlich ein Kuschelbär, wird mit Sensorik und
+Software erweitert. Der Bär soll laute Geräusche oder mögliches
+Babyweinen erkennen und diese Information an eine App weitergeben.
+
+Technisch besteht der Prototyp aus einem ESP32 mit Mikrofon, einem
+Go-Server zur Auswertung der Messwerte und einer Flutter-App, die den
+aktuellen Zustand für die Eltern sichtbar macht.
+
+\folie{2}{Ausgangsidee}
+Die Ausgangsidee war, Technik möglichst unauffällig in ein vertrautes
+Objekt zu integrieren.
+
+Ein Teddybär ist weich, bekannt und wirkt nicht wie ein technisches
+Gerät. Genau das ist bei interaktiven Textilien interessant: Die
+Elektronik verschwindet im Objekt, aber das Objekt bekommt trotzdem eine
+digitale Funktion.
+
+Der Bär nimmt Geräusche in seiner Umgebung wahr. Die Messwerte werden an
+einen Server geschickt. Dort wird entschieden, ob alles ruhig ist, ob es
+sehr laut ist oder ob mögliches Babyweinen erkannt wurde. Die App zeigt
+diese Information dann als verständliche Warnung an.
+
+\folie{3}{Konzept}
+Auf dieser Folie sieht man das Grundkonzept: Textiles Objekt,
+Wahrnehmung und Reaktion.
+
+Das textile Objekt ist der Teddybär. Er ist kindgerecht und vertraut.
+Die Sensorik kann darin verdeckt eingebaut werden, sodass die Nutzung
+keine große technische Hürde hat.
+
+Die Wahrnehmung passiert über Geräusche. Der ESP32 misst den Pegel und
+kann zusätzlich kurze Audiodaten an den Server schicken. Der Server
+macht daraus ein Ereignis.
+
+Die Reaktion passiert über die App. Statt nur rohe Messwerte zu zeigen,
+übersetzt die App die Ereignisse in klare Zustände wie \glqq Alles
+ruhig\grqq{}, \glqq Weinen erkannt\grqq{} oder \glqq Sehr laut\grqq{}.
+
+\folie{4}{Architektur}
+Die Architektur besteht aus drei Hauptteilen.
+
+Der erste Teil ist der Teddybär mit ESP32 und Mikrofon. Der ESP32 misst
+die Lautstärke und sendet die Daten per HTTP als JSON an den Server. Für
+die Audioanalyse kann er außerdem kurze WAV-Ausschnitte senden.
+
+Der zweite Teil ist der Go-Server. Er ist die zentrale Stelle im System:
+Er nimmt Messwerte entgegen, speichert die letzten Ereignisse und
+bewertet, ob eine Warnung ausgelöst werden soll. Die Bewertung kann
+lokal über Lautstärke-Schwellwerte passieren oder optional mit Gemini
+unterstützt werden.
+
+Der dritte Teil ist die Flutter-App. Sie fragt den Server regelmäßig ab
+und zeigt den aktuellen Status, den Pegel und die letzten Ereignisse an.
+Dadurch müssen die Eltern nicht direkt auf den Bär schauen, sondern
+bekommen die Warnung über die App.
+
+\folie{5}{Flutter-App}
+Die Flutter-App ist als Dashboard für Eltern gedacht.
+
+Im oberen Bereich sieht man den aktuellen Status. Mögliche Zustände sind
+zum Beispiel \glqq Bereit\grqq{}, \glqq Alles ruhig\grqq{}, \glqq
+Weinen erkannt\grqq{} oder \glqq Sehr laut\grqq{}.
+
+Zusätzlich zeigt die App den aktuellen Pegel an. Sie fragt den Server
+alle drei Sekunden ab. Wenn ein neues Warnereignis erkannt wird, kann
+ein Warnton abgespielt werden.
+
+Unten gibt es eine Ereignisliste mit den letzten Meldungen. Für die Demo
+sind außerdem Testbuttons hilfreich, weil man damit Warnungen auslösen
+kann, auch wenn gerade kein ESP32 angeschlossen ist.
+
+\folie{6}{Demo}
+In der Demo würde ich zuerst kurz zeigen, dass der Server läuft. Danach
+öffne ich die Flutter-App und zeige den normalen Zustand.
+
+Dann löse ich ein Testereignis aus oder nutze den ESP32 mit Mikrofon.
+Wenn ein lautes Geräusch oder ein Weinen-Ereignis erkannt wird, ändert
+sich der Status in der App. Außerdem erscheint das Ereignis in der
+Liste, und bei aktivierter Tonfunktion wird ein Warnsignal abgespielt.
+
+Wichtig ist dabei: Der Prototyp funktioniert auch ohne externe KI. Wenn
+Gemini nicht verfügbar ist, kann der Server weiterhin über lokale
+Schwellwerte reagieren. Mit Gemini kann die Bewertung aber genauer
+werden, weil nicht nur die Lautstärke, sondern auch die Art des Geräuschs
+betrachtet wird.
+
+\section*{Schluss}
+Zusammenfassend zeigt das Projekt, wie ein normales textiles Objekt zu
+einem interaktiven System erweitert werden kann.
+
+Der Teddybär bleibt äußerlich ein vertrautes Objekt, bekommt aber durch
+ESP32, Server und App eine neue Funktion. Er kann Geräusche wahrnehmen,
+Ereignisse auslösen und Eltern über eine App informieren.
+
+Für eine Weiterentwicklung könnte man die Hardware kleiner und stabiler
+einbauen, die Erkennung mit mehr Testdaten verbessern und die App für
+eine echte Nutzung auf dem Smartphone erweitern.
+
+\section*{Kurzer Demo-Ablauf}
+\begin{enumerate}[label=\arabic*.]
+  \item Server starten.
+  \item Flutter-App öffnen.
+  \item Normalen Zustand \glqq Alles ruhig\grqq{} zeigen.
+  \item Testbutton oder ESP32-Geräusch verwenden.
+  \item Statuswechsel und Ereignisliste in der App zeigen.
+  \item Kurz erklären, ob die Bewertung lokal oder mit Gemini erfolgt.
+\end{enumerate}
+
+\end{document}

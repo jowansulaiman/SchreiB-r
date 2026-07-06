@@ -4,7 +4,7 @@
 
 const char* WIFI_SSID =  "Jowan";
 const char* WIFI_PASSWORD = "jowan112";
-const char* SERVER_HOST = "192.168.178.24";
+const char* SERVER_HOST = "172.20.10.6";
 const uint16_t SERVER_PORT = 8080;
 const char* DEVICE_ID = "esp32";
 
@@ -19,6 +19,8 @@ const int AUDIO_SAMPLE_RATE = 8000;
 const int AUDIO_SECONDS = 2;
 const int AUDIO_SAMPLES = AUDIO_SAMPLE_RATE * AUDIO_SECONDS;
 const int WAV_HEADER_BYTES = 44;
+const float AUDIO_NORMALIZE_TARGET = 110.0;
+const float AUDIO_MAX_GAIN = 12.0;
 
 unsigned long lastEventSend = 0;
 unsigned long lastVolumeSend = 0;
@@ -120,13 +122,21 @@ void sendEvent(int level, bool crying) {
   }
 
   String audioBase64 = "";
+  int sensorLevel = level;
   int audioLevel = level;
   if (SEND_AUDIO_TO_AI) {
     Serial.printf("AUDIO Aufnahme fuer KI startet (%d Sekunden, %d Hz)\n", AUDIO_SECONDS, AUDIO_SAMPLE_RATE);
     audioBase64 = recordAudioWavBase64(audioLevel);
     if (audioBase64.length() > 0) {
-      level = audioLevel;
-      Serial.printf("AUDIO bereit: level=%d, base64=%u Zeichen\n", level, (unsigned int)audioBase64.length());
+      level = max(sensorLevel, audioLevel);
+      crying = crying || level >= CRY_THRESHOLD;
+      Serial.printf(
+        "AUDIO bereit: sensorLevel=%d audioLevel=%d eventLevel=%d base64=%u Zeichen\n",
+        sensorLevel,
+        audioLevel,
+        level,
+        (unsigned int)audioBase64.length()
+      );
     } else {
       Serial.println("AUDIO nicht verfuegbar, sende nur Sensorbewertung");
     }
@@ -154,7 +164,7 @@ void sendEvent(int level, bool crying) {
   body += String(confidence, 2);
   body += ",";
   body += "\"message\":\"";
-  body += audioBase64.length() > 0 ? "KI-Audioanalyse angefragt" : (crying ? "Sensor: Weinen moeglich" : "Sensor: ruhig");
+  body += audioBase64.length() > 0 ? (crying ? "Sensor: Weinen moeglich, KI prueft Audio" : "KI-Audioanalyse angefragt") : (crying ? "Sensor: Weinen moeglich" : "Sensor: ruhig");
   body += "\"";
   if (audioBase64.length() > 0) {
     body += ",";
@@ -212,9 +222,16 @@ String makeUrl(const char* path) {
 String recordAudioWavBase64(int& level) {
   const uint32_t dataSize = AUDIO_SAMPLES;
   const uint32_t wavSize = WAV_HEADER_BYTES + dataSize;
+  uint16_t* raw = (uint16_t*)malloc(AUDIO_SAMPLES * sizeof(uint16_t));
+  if (raw == nullptr) {
+    Serial.println("AUDIO Fehler: Kein Speicher fuer Rohdaten-Puffer");
+    return "";
+  }
+
   uint8_t* wav = (uint8_t*)malloc(wavSize);
   if (wav == nullptr) {
     Serial.println("AUDIO Fehler: Kein Speicher fuer WAV-Puffer");
+    free(raw);
     return "";
   }
 
@@ -222,6 +239,7 @@ String recordAudioWavBase64(int& level) {
 
   int minValue = 4095;
   int maxValue = 0;
+  uint32_t sum = 0;
   const uint32_t sampleIntervalUs = 1000000UL / AUDIO_SAMPLE_RATE;
   uint32_t nextSampleAt = micros();
 
@@ -229,8 +247,9 @@ String recordAudioWavBase64(int& level) {
     int value = analogRead(SOUND_PIN);
     if (value < minValue) minValue = value;
     if (value > maxValue) maxValue = value;
+    raw[i] = value;
+    sum += value;
 
-    wav[WAV_HEADER_BYTES + i] = constrain(value >> 4, 0, 255);
     nextSampleAt += sampleIntervalUs;
     while ((int32_t)(micros() - nextSampleAt) < 0) {
       delayMicroseconds(10);
@@ -238,6 +257,19 @@ String recordAudioWavBase64(int& level) {
   }
 
   level = maxValue - minValue;
+  int center = AUDIO_SAMPLES > 0 ? sum / AUDIO_SAMPLES : 2048;
+  int maxDistance = max(maxValue - center, center - minValue);
+  float gain = 1.0;
+  if (maxDistance > 0) {
+    gain = AUDIO_NORMALIZE_TARGET / maxDistance;
+    if (gain > AUDIO_MAX_GAIN) gain = AUDIO_MAX_GAIN;
+  }
+
+  for (int i = 0; i < AUDIO_SAMPLES; i++) {
+    int normalized = 128 + (int)((raw[i] - center) * gain);
+    wav[WAV_HEADER_BYTES + i] = constrain(normalized, 0, 255);
+  }
+  free(raw);
 
   size_t encodedCapacity = ((wavSize + 2) / 3) * 4 + 1;
   unsigned char* encoded = (unsigned char*)malloc(encodedCapacity);

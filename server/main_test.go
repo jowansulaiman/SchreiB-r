@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"context"
+	"testing"
+)
 
 func TestLocalVerdictTreatsHighVolumeAsCryEvenWhenSensorFlagFalse(t *testing.T) {
 	falseFlag := false
@@ -17,6 +20,24 @@ func TestLocalVerdictTreatsHighVolumeAsCryEvenWhenSensorFlagFalse(t *testing.T) 
 	}
 	if got.Confidence < 0.55 {
 		t.Fatalf("localVerdict() confidence = %.2f, want at least 0.55 for crying", got.Confidence)
+	}
+}
+
+func TestBuildEventKeepsConnectedAlertType(t *testing.T) {
+	event, err := buildEvent(context.Background(), config{threshold: 65}, sensorRequest{
+		DeviceID:  "esp32",
+		AlertType: "connected",
+		Volume:    0,
+		Message:   "Board verbunden",
+	})
+	if err != nil {
+		t.Fatalf("buildEvent() error = %v", err)
+	}
+	if event.AlertType != "connected" {
+		t.Fatalf("buildEvent() alertType = %q, want connected", event.AlertType)
+	}
+	if event.Crying {
+		t.Fatalf("buildEvent() crying = true, want false")
 	}
 }
 

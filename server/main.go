@@ -30,6 +30,7 @@ type config struct {
 
 type sensorRequest struct {
 	DeviceID    string   `json:"deviceId"`
+	AlertType   string   `json:"alertType,omitempty"`
 	AudioBase64 string   `json:"audioBase64,omitempty"`
 	MimeType    string   `json:"mimeType,omitempty"`
 	Volume      float64  `json:"volume,omitempty"`
@@ -334,10 +335,7 @@ func buildEvent(ctx context.Context, cfg config, req sensorRequest) (cryEvent, e
 		}
 	}
 
-	alertType := "quiet"
-	if result.Crying {
-		alertType = "cry"
-	}
+	alertType := eventAlertType(req.AlertType, result.Crying)
 
 	return cryEvent{
 		DeviceID:   deviceID,
@@ -349,6 +347,19 @@ func buildEvent(ctx context.Context, cfg config, req sensorRequest) (cryEvent, e
 		Message:    result.Message,
 		CreatedAt:  time.Now().UTC(),
 	}, nil
+}
+
+func eventAlertType(raw string, crying bool) string {
+	if crying {
+		return "cry"
+	}
+
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "connected", "startup", "online":
+		return "connected"
+	default:
+		return "quiet"
+	}
 }
 
 func buildVolumeReading(cfg config, req volumeRequest) volumeReading {

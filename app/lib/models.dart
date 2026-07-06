@@ -23,6 +23,7 @@ class CryEvent {
 
   bool get isCry => alertType == 'cry' || crying;
   bool get isLoud => alertType == 'loud';
+  bool get isConnected => alertType == 'connected';
   bool get isAlert => isCry || isLoud;
 
   factory CryEvent.fromJson(Map<String, dynamic> json) {

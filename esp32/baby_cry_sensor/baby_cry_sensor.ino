@@ -37,6 +37,7 @@ struct SoundReading {
 String makeUrl(const char* path);
 void connectWiFi();
 SoundReading readSound();
+void sendStartupStatus();
 void sendEvent(int level, bool crying);
 void sendVolume(int level);
 void logMeasurement(const SoundReading& reading, bool loudEnough, bool crying);
@@ -59,6 +60,7 @@ void setup() {
   analogReadResolution(12);
   analogSetPinAttenuation(SOUND_PIN, ADC_11db);
   connectWiFi();
+  sendStartupStatus();
 }
 
 void loop() {
@@ -217,6 +219,44 @@ void sendVolume(int level) {
 
 String makeUrl(const char* path) {
   return String("http://") + SERVER_HOST + ":" + String(SERVER_PORT) + path;
+}
+
+void sendStartupStatus() {
+  if (WiFi.status() != WL_CONNECTED) {
+    connectWiFi();
+  }
+
+  HTTPClient http;
+  String url = makeUrl("/api/events");
+  Serial.printf("STARTUP sende an %s\n", url.c_str());
+  http.begin(url);
+  http.setTimeout(10000);
+  http.addHeader("Content-Type", "application/json");
+
+  String body = "{";
+  body += "\"deviceId\":\"";
+  body += DEVICE_ID;
+  body += "\",";
+  body += "\"alertType\":\"connected\",";
+  body += "\"crying\":false,";
+  body += "\"volume\":0,";
+  body += "\"confidence\":1.00,";
+  body += "\"message\":\"Board verbunden";
+  body += " (IP ";
+  body += WiFi.localIP().toString();
+  body += ")\"";
+  body += "}";
+
+  int status = http.POST(body);
+  String response = http.getString();
+  String errorText = status < 0 ? http.errorToString(status) : "";
+  Serial.printf("STARTUP Request: %s\n", body.c_str());
+  logHttpResult("STARTUP", status, response, errorText);
+  http.end();
+
+  if (status >= 200 && status < 300) {
+    lastEventSend = millis();
+  }
 }
 
 String recordAudioWavBase64(int& level) {

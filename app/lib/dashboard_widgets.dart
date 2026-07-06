@@ -262,12 +262,16 @@ class EventList extends StatelessWidget {
                           ? const Color(0xFFDC2626)
                           : event.isLoud
                               ? const Color(0xFFF97316)
-                              : const Color(0xFF16A34A);
+                              : event.isConnected
+                                  ? const Color(0xFF2563EB)
+                                  : const Color(0xFF16A34A);
                       final icon = event.isCry
                           ? Icons.notifications_active
                           : event.isLoud
                               ? Icons.volume_up
-                              : Icons.check_circle;
+                              : event.isConnected
+                                  ? Icons.sensors
+                                  : Icons.check_circle;
 
                       return ListTile(
                         contentPadding: EdgeInsets.zero,

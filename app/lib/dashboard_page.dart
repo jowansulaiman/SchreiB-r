@@ -217,6 +217,14 @@ class _DashboardPageState extends State<DashboardPage> {
         icon: Icons.volume_up,
       );
     }
+    if (event.isConnected) {
+      return DashboardStatus(
+        title: 'Board verbunden',
+        message: event.message,
+        color: const Color(0xFF2563EB),
+        icon: Icons.sensors,
+      );
+    }
     return DashboardStatus(
       title: 'Alles ruhig',
       message: event.message,

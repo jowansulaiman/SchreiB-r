@@ -156,6 +156,6 @@ Oeffne `esp32/baby_cry_sensor/baby_cry_sensor.ino` in der Arduino IDE und passe 
 
 Die lokale IP findest du auf Linux mit `ip -4 addr show`, auf macOS mit `ipconfig getifaddr en0` und auf Windows mit `ipconfig`. Der ESP32 und der Server-Rechner muessen im gleichen WLAN oder Hotspot sein.
 
-Der Sketch sendet Weinen-Events an `/api/events` und Pegelwerte an `/api/volume`. Wenn ein Pegel den Server-Schwellwert `LOUD_VOLUME_THRESHOLD` ueberschreitet, erscheint automatisch eine Lautstaerke-Warnung in der UI.
+Der Sketch sendet beim Start ein `Board verbunden`-Event an `/api/events`, danach Weinen-Events an `/api/events` und Pegelwerte an `/api/volume`. Wenn ein Pegel den Server-Schwellwert `LOUD_VOLUME_THRESHOLD` ueberschreitet, erscheint automatisch eine Lautstaerke-Warnung in der UI.
 
 Wenn im Serial-Monitor oder in der App trotz Geraeusch dauerhaft `level=0` steht, kommt am ESP32 kein analoges Signal an. Dann `SOUND_PIN` mit dem `AO`-Ausgang des Mikrofons verbinden, gemeinsame Masse pruefen und den Sensor-Poti empfindlicher drehen. Der Server laesst ein lokales Weinen-Signal nicht mehr durch ein einzelnes unsicheres Gemini-Urteil auf `Alles ruhig` herunterstufen.
